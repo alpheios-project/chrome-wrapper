@@ -241,7 +241,7 @@ var morphlibrary = (function (jQuery) {
 
     var morphresponse =
 //constructor for response of parsed morphology object that morphology parser returns
-        function morphresponse(originform, objects, isordered, credit) {
+        function morphresponse(originform, objects, isordered, credit, lang) {
             classCallCheck(this, morphresponse);
 
             // the original analyzed form
@@ -252,6 +252,8 @@ var morphlibrary = (function (jQuery) {
             this.ordered = isordered;
             //credits
             this.credits = credit;
+            //language of morphservice
+            this.lang = lang;
         };
 
     var analysisresponse =
@@ -313,7 +315,7 @@ var morphlibrary = (function (jQuery) {
             }
             console.log("Language not installed");
         } else if (jqid) {
-            if ($(jqid).parents("[xml\\:lang]")) {
+            if ($(jqid).parents("[xml\\:lang]").length > 0) {
                 elementlang = $(jqid).parents("[xml\\:lang]")[0].attributes["xml:lang"].nodeValue;
                 if (elementlang == 'lat') {
                     if (instance.prefs.getdebugstatus()) {
@@ -336,6 +338,33 @@ var morphlibrary = (function (jQuery) {
                 if (elementlang == 'per') {
                     if (instance.prefs.getdebugstatus()) {
                         console.log("Running word as Persian, lang taken from ancestor element");
+                    }
+                    return processwordper(event.target, instance);
+                }
+                console.log("Language not installed");
+            } else {
+                elementlang = instance.defaultlang;
+                if (elementlang == 'lat') {
+                    if (instance.prefs.getdebugstatus()) {
+                        console.log("Running word as latin, lang taken from default");
+                    }
+                    return processwordlat(event.target, instance);
+                }
+                if (elementlang == 'grc') {
+                    if (instance.prefs.getdebugstatus()) {
+                        console.log("Running word as greek, lang taken from default");
+                    }
+                    return processwordgrc(event.target, instance);
+                }
+                if (elementlang == 'ara') {
+                    if (instance.prefs.getdebugstatus()) {
+                        console.log("Running word as Arabic, lang taken from element");
+                    }
+                    return processwordara(event.target, instance);
+                }
+                if (elementlang == 'per') {
+                    if (instance.prefs.getdebugstatus()) {
+                        console.log("Running word as Persian, lang taken from element");
                     }
                     return processwordper(event.target, instance);
                 }
@@ -443,6 +472,58 @@ var morphlibrary = (function (jQuery) {
     }
 
     /**
+     * Just an XmlHttpRequest helper
+     *
+     *
+     * @param  {string}     method             HTTP Method
+     * @param  {string}     url                HTTP URI to call
+     * @param  {string}     datatype           Return data type
+     * @param  {?function}  success            Function to call when request is done
+     *
+     */
+
+    function async(url, method, datatype, success) {
+        jQuery.ajax({
+            url: url,
+            type: method,
+            dataType: datatype,
+            success: success
+        });
+    }
+
+    /**
+     * Created by Elijah Cooke on 1/20/2017.
+     */
+    function bigdictlookup(instance, popup, lang, originalform, lemma) {
+        if (instance.prefs.getdebugstatus()) {
+            console.log("Starting big dictionary lookup");
+        }
+        var data;
+        var uri;
+        if (lang == "grc") {
+            uri = "http://repos1.alpheios.net/exist/rest/db/xq/lexi-get.xq?lx=lsj&lg=grc&out=HTML&l=" + lemma;
+        } else if (lang == "lat") {
+            var splitlemma = lemma.split(",");
+            if (Object.prototype.toString.call(splitlemma) === '[object Array]') {
+                var lemmas = "";
+                for (var i = 0; i < splitlemma.length; i++) {
+                    lemmas = lemmas + "&l=" + splitlemma[i];
+                }
+                uri = "http://repos1.alpheios.net/exist/rest/db/xq/lexi-get.xq?lx=ls&lg=lat&out=HTML" + lemmas;
+            } else {
+                uri = "http://repos1.alpheios.net/exist/rest/db/xq/lexi-get.xq?lx=ls&lg=lat&out=HTML&l=" + lemma;
+            }
+        } else if (lang == "ara") {
+            uri = "http://repos1.alpheios.net/exist/rest/db/xq/lexi-get.xq?lx=sal&lg=ara&out=HTML&l=" + lemma;
+        } else if (lang == "per") {
+            uri = "http://repos1.alpheios.net/exist/rest/db/xq/lexi-get.xq?lx=stg&lg=per&out=HTML&l=" + lemma;
+        }
+        async(uri, "GET", "html", function (result) {
+            popup.document.write("<div id='morphlibwindowdictlookup' style='visibility: hidden; position: absolute; top: 0px'>" + result + "</div>");
+        });
+    }
+
+    /**
      * Created by elijah on 6/30/16.
      */
     function launchPopup(morpgresponse, instance) {
@@ -456,7 +537,8 @@ var morphlibrary = (function (jQuery) {
         } else {
             myWindow = window.open("", "morplibWindow", "width=600,height=400");
         }
-        myWindow.document.write('<head><link rel="stylesheet" href="morphwindow.css" type="text/css" /><title>Morphology Library Window</title> </head>');
+        myWindow.document.write('<head><link rel="stylesheet" href="'+chrome.extension.getURL("morphwindow.css")+'" type="text/css" /><title>Morphology Library Window</title> </head>');
+        myWindow.document.write('<script> function togglehidden() { if(document.getElementById("morphlibwinmorph").style.visibility=="hidden"){ document.getElementById("morphlibwinmorph").style.visibility = "visible"; } else { document.getElementById("morphlibwinmorph").style.visibility = "hidden"; } if(document.getElementById("morphlibwindowdictlookup").style.visibility== "hidden"){ document.getElementById("morphlibwindowdictlookup").style.visibility = "visible"; } else { document.getElementById("morphlibwindowdictlookup").style.visibility = "hidden"; } } </script>');
         if (!myWindow) {
             if (debug) {
                 console.log("Warning popup window failed to create popup window");
@@ -468,7 +550,8 @@ var morphlibrary = (function (jQuery) {
             console.log("Popup window created successfully");
         }
         var entries = morpgresponse.analysisobjects;
-        myWindow.document.write('<div context="' + morpgresponse.originalform + ' class="morphlib-word morphlib-word-first">');
+        myWindow.document.write('<div><button id="toggledict" type="button" style="position: fixed; bottom: 0px; right: 0px; z-index: 1;" onclick="togglehidden()">Toggle Full Dictionary</button></div>');
+        myWindow.document.write('<div id="morphlibwinmorph" style="visibility: visible; position: absolute; top: 0px" context="' + morpgresponse.originalform + ' class="morphlib-word morphlib-word-first">');
         for (var i = 0; i < entries.length; i++) {
             myWindow.document.write('<div class="morphlib-entry">');
             myWindow.document.write('<div class="morplib-dict"><span class="morphlib-hdwd">' + entries[i].lemma + ': </span>');
@@ -507,30 +590,12 @@ var morphlibrary = (function (jQuery) {
             }
             myWindow.document.write('</div>');
         }
-        myWindow.document.write("</div>");
         myWindow.document.write('<div>' + morpgresponse.credits + '</div>');
+        myWindow.document.write("</div>");
         myWindow.focus();
+        bigdictlookup(instance, myWindow, morpgresponse.lang, morpgresponse.originalform, entries[0].lemma);
+        //myWindow.document.write("<div id='morphlibwindowdictlookup' style='visibility: hidden; position: relative'>" + bigdictlookup(instance, morpgresponse.lang, morpgresponse.originalform, entries[0].lemma) + "</div>")
         instance.popup = myWindow;
-    }
-
-    /**
-     * Just an XmlHttpRequest helper
-     *
-     *
-     * @param  {string}     method             HTTP Method
-     * @param  {string}     url                HTTP URI to call
-     * @param  {string}     datatype           Return data type
-     * @param  {?function}  success            Function to call when request is done
-     *
-     */
-
-    function async(url, method, datatype, success) {
-        jQuery.ajax({
-            url: url,
-            type: method,
-            dataType: datatype,
-            success: success
-        });
     }
 
     /**
@@ -718,7 +783,7 @@ var morphlibrary = (function (jQuery) {
                 }
             }
         }
-        var response = new morphresponse(tokenobj, analysisobjects, false, "Short definitions and morphology from Words by William Whitaker, Copyright © 1993-2016. Services provided by The Perseids Project at Tufts University and Alpheios.net.");
+        var response = new morphresponse(tokenobj, analysisobjects, false, "Short definitions and morphology from Words by William Whitaker, Copyright © 1993-2016. Services provided by The Perseids Project at Tufts University and Alpheios.net.", instance.currentlang);
         launchPopup(response, instance);
         return response;
     }
@@ -1109,7 +1174,7 @@ var morphlibrary = (function (jQuery) {
             }
             credits = "Morphology provided by Buckwalter Arabic Morphological Analyzer Version 2.0 from QUAMUS LLC (www.quamus.org). Short definitions from An Advanced Learner's Arabic Dictionary (H. Anthony Salmone). Services provided by The Perseids Project at Tufts University and Alpheios.net.";
         }
-        var response = new morphresponse(tokenobj, analysisobjects, false, credits);
+        var response = new morphresponse(tokenobj, analysisobjects, false, credits, instance.currentlang);
         launchPopup(response, instance);
         return response;
     }
@@ -1133,7 +1198,7 @@ var morphlibrary = (function (jQuery) {
  *    }}
      */
     var morphlib = function () {
-        function morphlib(documentobj, shortdefgrc) {
+        function morphlib(shortdefgrc) {
             classCallCheck(this, morphlib);
 
             var xx = this;
@@ -1159,12 +1224,10 @@ var morphlibrary = (function (jQuery) {
             this.focusElements = false;
             //setup preferences from saved preference file
             this.prefs = new preferences("preferences.json");
-            //document object
-            this.doc = documentobj;
             //previous morphology results
             this.morphresults = [];
             //short definitions for greek
-            jQuery.getJSON(shortdefgrc, function (data) {
+            jQuery.getJSON("grc-lsj-defs.json", function (data) {
                 xx.shortdefgreek = data;
             });
             //short definitions for persian
@@ -1299,6 +1362,8 @@ var morphlibrary = (function (jQuery) {
     return morphlib;
 
 }(jQuery));
+
+
 
 // Start of code for chrome extension
 
