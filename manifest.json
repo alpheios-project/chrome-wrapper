@@ -3,7 +3,7 @@
 
   "name": "Alpheios v2",
   "description": "This extension enables the use of Alpheios morphology library",
-  "version": "1.1",
+  "version": "1.2",
 
   "browser_action": {
     "default_icon": "icon.png",
